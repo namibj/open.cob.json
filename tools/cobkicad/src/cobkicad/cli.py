@@ -17,12 +17,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=Path("."), help="output directory")
     ap.add_argument("--shapes", action="append", type=Path, default=[], help="extra shape catalog directory")
     ap.add_argument("--lib", default="open_cob", help="library nickname for the Footprint field")
+    ap.add_argument("--flip-chip", action="store_true", help="generate die pads on bottom copper for flip-chip placement")
+    ap.add_argument("--strict", action="store_true", help="skip silkscreen and wirebond PCB pads in flip-chip mode")
     args = ap.parse_args(argv)
 
     try:
         cob = Cob.load(args.file, args.shapes)
-        sym = build_symbol(cob, args.lib)
-        fp = build_footprint(cob)
+        sym = build_symbol(cob, args.lib, flip_chip=args.flip_chip, strict=args.strict)
+        fp = build_footprint(cob, flip_chip=args.flip_chip, strict=args.strict)
     except (OSError, ValueError, KeyError) as e:
         print(f"cobkicad: {e}", file=sys.stderr)
         return 1

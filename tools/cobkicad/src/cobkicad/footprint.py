@@ -38,7 +38,7 @@ def footprint_name(cob: Cob) -> str:
     return "COB_" + cob.data.get("meta", {}).get("name", "DIE").replace(" ", "_")
 
 
-def build_footprint(cob: Cob) -> str:
+def build_footprint(cob: Cob, flip_chip: bool = False, strict: bool = False) -> str:
     meta = cob.data.get("meta", {})
     name = footprint_name(cob)
     die = cob.die
@@ -56,20 +56,43 @@ def build_footprint(cob: Cob) -> str:
     out.append("  (attr smd)")
 
     # --- die on silkscreen ----------------------------------------------------
-    out.append(poly("F.SilkS", rect(ox, oy, w, h), fill=False))
-    notch = die.get("notch")
-    if isinstance(notch, dict):
-        ns = notch.get("size", [0.1, 0.1])
-        sx = -1 if "left" in notch.get("side", "") else 1
-        sy = 1 if "top" in notch.get("side", "") else -1
-        cx, cy = ox + sx * (w / 2 - ns[0] / 2), oy + sy * (h / 2 - ns[1] / 2)
-        out.append(poly("F.SilkS", rect(cx, cy, ns[0], ns[1]), fill=True))
+    if not (flip_chip and strict):
+        out.append(poly("F.SilkS", rect(ox, oy, w, h), fill=False))
+        notch = die.get("notch")
+        if isinstance(notch, dict):
+            ns = notch.get("size", [0.1, 0.1])
+            sx = -1 if "left" in notch.get("side", "") else 1
+            sy = 1 if "top" in notch.get("side", "") else -1
+            cx, cy = ox + sx * (w / 2 - ns[0] / 2), oy + sy * (h / 2 - ns[1] / 2)
+            out.append(poly("F.SilkS", rect(cx, cy, ns[0], ns[1]), fill=True))
+
+    pad_for_die = {}
+    for w_wire in cob.wires():
+        pad_for_die[w_wire.get("from", {}).get("die_pad")] = w_wire.get("to", {}).get("pcb_pad")
+
     for dp in cob.die_pads():
         c, sz = dp["center"], dp.get("size", [0.08, 0.08])
-        out.append(poly("F.SilkS", rect(c[0], c[1], sz[0], sz[1]), width=0.05, fill=False))
+        if flip_chip:
+            at = flip(c)
+            # Find associated pad name/number if wired
+            pcb_pad_id = pad_for_die.get(dp["id"])
+            pcb_pad = cob.pcb_pad_by_id(pcb_pad_id) if pcb_pad_id else None
+
+            pad_num = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("name", dp["id"])
+            pad_name = pcb_pad.get("name", "") if pcb_pad else dp.get("name", dp["id"])
+
+            layers = ["B.Cu", "B.Paste", "B.Mask"]
+            out.append(
+                f"  (pad {q(pad_num)} smd rect (at {num(at[0])} {num(at[1])}) (size {num(sz[0])} {num(sz[1])}) "
+                f"(layers {' '.join(q(l) for l in layers)}) (pinfunction {q(pad_name)}) {new_uuid()})"
+            )
+        else:
+            out.append(poly("F.SilkS", rect(c[0], c[1], sz[0], sz[1]), width=0.05, fill=False))
 
     # --- pcb pads on F.Cu -------------------------------------------------------
     for pad in cob.pcb_pads():
+        if flip_chip and strict:
+            continue
         polys = cob.placed_polygons(pad)
         at = flip(pad.get("at", [0, 0]))
         layers = ["F.Cu"]
@@ -122,11 +145,12 @@ def build_footprint(cob: Cob) -> str:
                     out.append(poly(layer, p, width=0.1 if layer.endswith("SilkS") else 0, fill=True))
 
     # --- wires as documentation -----------------------------------------------
-    for wire in cob.wires():
-        dp = cob.die_pad_by_id(wire.get("from", {}).get("die_pad", ""))
-        pp = cob.pcb_pad_by_id(wire.get("to", {}).get("pcb_pad", ""))
-        if dp and pp:
-            out.append(line(dp["center"], cob.bond_target(pp), WIRE_LAYER, 0.05))
+    if not (flip_chip and strict):
+        for wire in cob.wires():
+            dp = cob.die_pad_by_id(wire.get("from", {}).get("die_pad", ""))
+            pp = cob.pcb_pad_by_id(wire.get("to", {}).get("pcb_pad", ""))
+            if dp and pp:
+                out.append(line(dp["center"], cob.bond_target(pp), WIRE_LAYER, 0.05))
 
     out.append(")")
     return "\n".join(out) + "\n"
