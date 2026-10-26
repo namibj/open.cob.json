@@ -43,14 +43,23 @@ def build_symbol(cob: Cob, lib_nick: str, flip_chip: bool = False, strict: bool 
             pcb_pad_id = pad_for_die.get(dp["id"])
             pcb_pad = cob.pcb_pad_by_id(pcb_pad_id) if pcb_pad_id else None
             pname = pcb_pad.get("name", "") if pcb_pad else dp.get("name", dp["id"])
-            pnum = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("name", dp["id"])
+            pnum = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("number", dp["id"])
+            if str(pnum) == "unspecified":
+                pnum = dp["id"]
+            if str(pname) == "unspecified":
+                pname = dp["id"]
             pins.append({"number": str(pnum), "name": pname,
                          "type": pin_type(dp, pname), "side": dp.get("side", "left")})
     else:
         for pad in cob.pcb_pads():
             dp = cob.die_pad_by_id(die_for_pad.get(pad["id"], ""))
             pname = pad.get("name", pad["id"])
-            pins.append({"number": str(pad.get("number", pad["id"])), "name": pname,
+            pnum = pad.get("number", pad["id"])
+            if str(pnum) == "unspecified":
+                pnum = pad["id"]
+            if str(pname) == "unspecified":
+                pname = pad["id"]
+            pins.append({"number": str(pnum), "name": pname,
                          "type": pin_type(dp, pname), "side": (dp or {}).get("side", "left")})
 
         if flip_chip:
@@ -58,7 +67,11 @@ def build_symbol(cob: Cob, lib_nick: str, flip_chip: bool = False, strict: bool 
             for dp in cob.die_pads():
                 if dp["id"] not in pad_for_die:
                     pname = dp.get("name", dp["id"])
-                    pnum = dp.get("name", dp["id"])
+                    pnum = dp.get("number", dp["id"])
+                    if str(pnum) == "unspecified":
+                        pnum = dp["id"]
+                    if str(pname) == "unspecified":
+                        pname = dp["id"]
                     pins.append({"number": str(pnum), "name": pname,
                                  "type": pin_type(dp, pname), "side": dp.get("side", "left")})
 

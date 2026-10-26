@@ -78,8 +78,12 @@ def build_footprint(cob: Cob, flip_chip: bool = False, strict: bool = False) -> 
             pcb_pad_id = pad_for_die.get(dp["id"])
             pcb_pad = cob.pcb_pad_by_id(pcb_pad_id) if pcb_pad_id else None
 
-            pad_num = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("name", dp["id"])
+            pad_num = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("number", dp["id"])
+            if pad_num == "unspecified":
+                pad_num = dp["id"]
             pad_name = pcb_pad.get("name", "") if pcb_pad else dp.get("name", dp["id"])
+            if pad_name == "unspecified":
+                pad_name = dp["id"]
 
             layers = ["B.Cu", "B.Paste", "B.Mask"]
             out.append(
