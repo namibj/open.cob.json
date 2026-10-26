@@ -20,21 +20,60 @@ def pin_type(dp: dict | None, name: str) -> str:
     return "passive"
 
 
-def build_symbol(cob: Cob, lib_nick: str) -> str:
+def build_symbol(cob: Cob, lib_nick: str, flip_chip: bool = False, strict: bool = False) -> str:
     meta = cob.data.get("meta", {})
     name = meta.get("name", "DIE").replace(" ", "_")
     fp = f"{lib_nick}:{footprint_name(cob)}"
 
     # pins: one per pcb pad, source die pad via wires for side and type
     die_for_pad = {}
+    pad_for_die = {}
     for w in cob.wires():
-        die_for_pad.setdefault(w.get("to", {}).get("pcb_pad"), w.get("from", {}).get("die_pad"))
+        dp_id = w.get("from", {}).get("die_pad")
+        pp_id = w.get("to", {}).get("pcb_pad")
+        if pp_id:
+            die_for_pad.setdefault(pp_id, dp_id)
+        if dp_id:
+            pad_for_die.setdefault(dp_id, pp_id)
+
     pins = []
-    for pad in cob.pcb_pads():
-        dp = cob.die_pad_by_id(die_for_pad.get(pad["id"], ""))
-        pname = pad.get("name", pad["id"])
-        pins.append({"number": str(pad.get("number", pad["id"])), "name": pname,
-                     "type": pin_type(dp, pname), "side": (dp or {}).get("side", "left")})
+
+    if flip_chip and strict:
+        for dp in cob.die_pads():
+            pcb_pad_id = pad_for_die.get(dp["id"])
+            pcb_pad = cob.pcb_pad_by_id(pcb_pad_id) if pcb_pad_id else None
+            pname = pcb_pad.get("name", "") if pcb_pad else dp.get("name", dp["id"])
+            pnum = pcb_pad.get("number", pcb_pad["id"]) if pcb_pad else dp.get("number", dp["id"])
+            if str(pnum) == "unspecified":
+                pnum = dp["id"]
+            if str(pname) == "unspecified":
+                pname = dp["id"]
+            pins.append({"number": str(pnum), "name": pname,
+                         "type": pin_type(dp, pname), "side": dp.get("side", "left")})
+    else:
+        for pad in cob.pcb_pads():
+            dp = cob.die_pad_by_id(die_for_pad.get(pad["id"], ""))
+            pname = pad.get("name", pad["id"])
+            pnum = pad.get("number", pad["id"])
+            if str(pnum) == "unspecified":
+                pnum = pad["id"]
+            if str(pname) == "unspecified":
+                pname = pad["id"]
+            pins.append({"number": str(pnum), "name": pname,
+                         "type": pin_type(dp, pname), "side": (dp or {}).get("side", "left")})
+
+        if flip_chip:
+            # Also add pins for unwired die pads
+            for dp in cob.die_pads():
+                if dp["id"] not in pad_for_die:
+                    pname = dp.get("name", dp["id"])
+                    pnum = dp.get("number", dp["id"])
+                    if str(pnum) == "unspecified":
+                        pnum = dp["id"]
+                    if str(pname) == "unspecified":
+                        pname = dp["id"]
+                    pins.append({"number": str(pnum), "name": pname,
+                                 "type": pin_type(dp, pname), "side": dp.get("side", "left")})
 
     top = [p for p in pins if p["type"] == "power_in" and p["name"].upper().startswith(("VDD", "VCC", "AVDD", "DVDD"))]
     bottom = [p for p in pins if p["type"] == "power_in" and p not in top]
